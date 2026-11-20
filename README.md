@@ -22,6 +22,11 @@ Electron 渲染进程里的 `new Notification()` 在 Windows 上经常被静默�
 
 所以 toast 由 Host 半用 Windows Runtime 直接发（`ToastNotificationManager`），标题「戳一戳」，正文是会话标题和用时，显示名跟随任务栏快捷方式。
 
+## 下载
+
+- Release（打包好的 `.tgz` 直接下）：https://github.com/liuzi1919810/DFY/releases
+- 源码压缩包（每个 tag 自动生成）：https://github.com/liuzi1919810/DFY/archive/refs/tags/v0.1.4.zip
+
 ## 安装
 
 需要 DSH 桌面版 + Windows（toast 依赖 WinRT）。
