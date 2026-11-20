@@ -29,10 +29,12 @@ Electron 渲染进程里的 `new Notification()` 在 Windows 上经常被静默�
 方式一，GitHub 直装（推荐）：
 
 ```
-dsh plugin --profile desktop add github:<你的用户名>/dsh-poke
+dsh plugin --profile desktop add github:liuzi1919810/DFY
 ```
 
 装完在 插件页 确认「戳一戳」这一行是启用状态，然后刷新页面。
+
+> 仓库名是 `DFY`，包名是 `@local/dsh-poke`，装的时候用仓库地址就行。
 
 方式二，本地打包安装：
 
