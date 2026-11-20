@@ -1,0 +1,30 @@
+﻿{
+    "name":  "@local/dsh-poke",
+    "version":  "0.1.4",
+    "private":  true,
+    "type":  "module",
+    "description":  "Poke-style notice when a Session task finishes: in-app card or Windows notification.",
+    "exports":  {
+                    ".":  "./index.js",
+                    "./client":  "./client.js",
+                    "./locale/*.json":  "./locale/*.json",
+                    "./icon":  "./icon.svg"
+                },
+    "files":  [
+                  "index.js",
+                  "client.js",
+                  "cordis.patch.yml",
+                  "locale/*.json",
+                  "icon.svg",
+                  "README.md"
+              ],
+    "dsh":  {
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "platform":  "web",
+                               "immediately":  true
+                           }
+            }
+}

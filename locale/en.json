@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Task poke",
+    "description": "Pokes you when a Session task finishes: an in-app card in the top-right corner, a Windows notification, or both chosen automatically. A task must have run for the configured minimum time, the card opens the Session and never raises the window, and clicks jump to that Session. Configure the mode, duration threshold, card lifetime, and whether the Session in front and subagent Sessions also poke, on this plugin's row in Plugins."
+  }
+}
