@@ -24,8 +24,9 @@ Electron 渲染进程里的 `new Notification()` 在 Windows 上经常被静默�
 
 ## 下载
 
-- Release（打包好的 `.tgz` 直接下）：https://github.com/liuzi1919810/DFY/releases
-- 源码压缩包（每个 tag 自动生成）：https://github.com/liuzi1919810/DFY/archive/refs/tags/v0.1.4.zip
+- 打包好的插件（直接下）：https://github.com/liuzi1919810/DFY/releases/download/v0.1.4/dsh-poke-0.1.4.tgz
+- Release 页：https://github.com/liuzi1919810/DFY/releases
+- 源码压缩包：https://github.com/liuzi1919810/DFY/archive/refs/tags/v0.1.4.zip
 
 ## 安装
 
