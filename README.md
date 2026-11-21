@@ -24,9 +24,8 @@ Electron 渲染进程里的 `new Notification()` 在 Windows 上经常被静默�
 
 ## 下载
 
-- 打包好的插件（直接下）：https://github.com/liuzi1919810/DFY/releases/download/v0.1.4/dsh-poke-0.1.4.tgz
-- Release 页：https://github.com/liuzi1919810/DFY/releases
-- 源码压缩包：https://github.com/liuzi1919810/DFY/archive/refs/tags/v0.1.4.zip
+- 打包好的插件（直接下）：https://github.com/liuzi1919810/DFY/releases/latest
+- 源码压缩包：https://github.com/liuzi1919810/DFY/archive/refs/heads/main.zip
 
 ## 安装
 
@@ -42,10 +41,9 @@ dsh plugin --profile desktop add github:liuzi1919810/DFY
 
 > 仓库名是 `DFY`，包名是 `@local/dsh-poke`，装的时候用仓库地址就行。
 
-方式二，本地打包安装：
+方式二，下载 Release 里的 `.tgz` 后安装：
 
 ```powershell
-pnpm pack
 dsh plugin --profile desktop add file:<tgz 绝对路径>
 ```
 
@@ -60,21 +58,10 @@ dsh plugin --profile desktop add file:<tgz 绝对路径>
 | `mode` | `auto` | `auto` 前台卡片、后台通知；`popup` 只弹卡片；`notification` 只发通知 |
 | `minDurationSeconds` | `5` | 跑够多少秒才提醒，0 表示全都提醒 |
 | `popupSeconds` | `8` | 卡片停留秒数 |
-| `includeCurrentSession` | `true` | 当前正在看的会话完成时也提醒 |
 | `ignoreSubagents` | `true` | 忽略子智能体会话 |
 | `windowsAppId` | `electron.app.DeepSeek Harness` | toast 使用的 Windows 应用标识，必须和任务栏快捷方式一致，否则系统静默丢弃 |
 
-改完配置 Host 半会重启，页面刷新后生效。
-
-## 诊断
-
-插件自带两个小接口，排查「为什么没戳」时很有用：
-
-- `GET /dsh-poke/config` — 当前配置
-- `POST /dsh-poke/test` — 立刻戳一次（卡片或通知，按当前 mode）
-- `POST /dsh-poke/report` — 页面把观察到的状态写日志
-
-日志在 `%DSH_HOME%\dsh-poke\report.jsonl`（默认 `C:\Users\<你>\.dsh\dsh-poke\report.jsonl`），记录挂载、运行状态变化、提醒走了哪条通道、通知是否被系统接受。超过 512 KB 会自动清空重写。
+改完配置后页面最多 15 秒内跟上新设置。
 
 ## 已知限制
 

@@ -1,15 +1,11 @@
 /**
  * Client half of dsh-poke: a poke-style notice when a Session task finishes.
  *
- * A "finished" task is a Session the Session list reports as running and then
- * not running again. The notice is either an in-app card on the frame-wide
- * overlay layer or a Windows notification, decided by the settings the Host half
- * publishes; the card is click-through outside itself and never raises the
- * window, so the app keeps its normal place behind other windows.
- *
- * What it observed is posted to the Host's diagnostics route, because a broken
- * slot entry is otherwise invisible: a render crash and a silent platform
- * notification look identical from the outside.
+ * A task is over when the Session list reports a Session running and then not
+ * running again. The notice is an in-app card on the frame-wide overlay layer or
+ * a Windows toast, chosen by the settings the Host publishes; the card is
+ * click-through outside itself and never raises the window, so the application
+ * keeps its normal place behind other windows.
  */
 
 window.__ModuleLoader__.load({
@@ -21,31 +17,26 @@ window.__ModuleLoader__.load({
 
     /** Locale namespace for every string this half shows. */
     const NAMESPACE = 'dsh-poke'
-    /** Host settings route registered by `index.js`. */
+    /** Host route carrying the current settings. */
     const ENDPOINT = '/dsh-poke/config'
-    /** Host diagnostics route; what this page saw, for the log. */
-    const REPORT_ENDPOINT = '/dsh-poke/report'
-    /** Host route that raises one Windows toast outside the page. */
+    /** Host route raising one Windows toast outside the page. */
     const TOAST_ENDPOINT = '/dsh-poke/toast'
     /** Settings used until the Host answers, and when it cannot be reached. */
     const DEFAULTS = Object.freeze({
       mode: 'auto',
       minDurationSeconds: 5,
       popupSeconds: 8,
-      includeCurrentSession: true,
       ignoreSubagents: true,
     })
     /** Most cards kept on screen at once; older ones fall off the top. */
     const MAX_CARDS = 3
-    /** How often the page re-reads the settings and the test counter. */
-    const REFRESH_MS = 4000
+    /** How often a mounted page re-reads the settings. */
+    const REFRESH_MS = 15000
 
     const DICTS = {
       en: {
         'notify.title': 'Poke',
         'notice.finished': 'Task finished',
-        'notice.current': 'the Session you are watching finished',
-        'test.title': 'Test poke',
         'action.open': 'Open this Session',
         'action.dismiss': 'Dismiss',
         'unit.hour': 'h',
@@ -55,8 +46,6 @@ window.__ModuleLoader__.load({
       zh: {
         'notify.title': '戳一戳',
         'notice.finished': '跑完了',
-        'notice.current': '正在看的会话跑完了',
-        'test.title': '测试卡片',
         'action.open': '打开这个会话',
         'action.dismiss': '关闭',
         'unit.hour': '小时',
@@ -159,10 +148,6 @@ window.__ModuleLoader__.load({
         mode: value.mode === 'popup' || value.mode === 'notification' ? value.mode : DEFAULTS.mode,
         minDurationSeconds: number(value.minDurationSeconds, DEFAULTS.minDurationSeconds, 0),
         popupSeconds: number(value.popupSeconds, DEFAULTS.popupSeconds, 2),
-        includeCurrentSession:
-          typeof value.includeCurrentSession === 'boolean'
-            ? value.includeCurrentSession
-            : DEFAULTS.includeCurrentSession,
         ignoreSubagents:
           typeof value.ignoreSubagents === 'boolean' ? value.ignoreSubagents : DEFAULTS.ignoreSubagents,
       }
@@ -207,41 +192,14 @@ window.__ModuleLoader__.load({
         const t = ctx.locale.bind(NAMESPACE)
         for (const locale of ['en', 'zh']) disposers.push(ctx.locale.register(NAMESPACE, locale, DICTS[locale]))
 
-        /** Post one observation to the Host log; never let it disturb the notice. */
-        const report = (event, data = {}) => {
-          try {
-            if (typeof fetch !== 'function') return
-            void fetch(REPORT_ENDPOINT, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ event, data }),
-            }).catch(() => {})
-          } catch {
-            /* Diagnostics are best-effort. */
-          }
-        }
-
-        report('apply', {
-          origin: typeof location === 'object' ? location.origin : null,
-          toastRoute: TOAST_ENDPOINT,
-          visibility: document.visibilityState,
-          focused: document.hasFocus(),
-          userAgent: typeof navigator === 'object' ? navigator.userAgent.slice(0, 160) : null,
-        })
-
         /** Reveal one Session and put the application window in front. */
         const openSession = (sessionId) => {
-          if (sessionId === undefined || sessionId === '') {
-            report('open-skipped', { reason: 'no-session-id' })
-            return
-          }
+          if (typeof sessionId !== 'string' || sessionId === '') return
           const uiWorkspace = ctx.get('uiWorkspace')
-          report('open-session', { sessionId, hasUiWorkspace: uiWorkspace !== undefined })
           if (uiWorkspace !== undefined) {
             try {
               uiWorkspace.openSession(sessionId)
             } catch (error) {
-              report('open-failed', { message: String((error && error.message) || error) })
               console.warn('[dsh-poke] opening the Session failed:', error)
             }
           }
@@ -254,32 +212,18 @@ window.__ModuleLoader__.load({
 
         /**
          * Ask the Host to raise one Windows toast.
-         * A renderer `Notification` is dropped silently by Electron, so the toast
-         * is raised from the Host process instead.
          * @returns whether the Host reported that it showed one.
          */
         const requestToast = (title, body) => {
-          try {
-            if (typeof fetch !== 'function') return Promise.resolve(false)
-            return fetch(TOAST_ENDPOINT, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ title, body }),
-            })
-              .then((response) => (response.ok ? response.json() : null))
-              .then((value) => {
-                const shown = value !== null && value.shown === true
-                report(shown ? 'toast-shown' : 'toast-rejected', {})
-                return shown
-              })
-              .catch((error) => {
-                report('toast-failed', { message: String((error && error.message) || error) })
-                return false
-              })
-          } catch (error) {
-            report('toast-threw', { message: String((error && error.message) || error) })
-            return Promise.resolve(false)
-          }
+          if (typeof fetch !== 'function') return Promise.resolve(false)
+          return fetch(TOAST_ENDPOINT, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title, body }),
+          })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((value) => value !== null && value.shown === true)
+            .catch(() => false)
         }
 
         const Overlay = (props) => {
@@ -289,9 +233,6 @@ window.__ModuleLoader__.load({
           const [top, setTop] = useState(44)
           const runningSince = useRef(new Map())
           const settings = useRef(DEFAULTS)
-          const testSeq = useRef(0)
-          const latestList = useRef(undefined)
-          latestList.current = list
 
           /** Drop one card by its key. */
           const dismiss = useCallback((key) => {
@@ -300,7 +241,6 @@ window.__ModuleLoader__.load({
 
           /** Add one card, retiring the oldest beyond the cap. */
           const showCard = useCallback((item) => {
-            report('card-shown', { sessionId: item.sessionId, title: item.title })
             const popupMs = settings.current.popupSeconds * 1000
             setCards((previous) =>
               [
@@ -310,7 +250,6 @@ window.__ModuleLoader__.load({
                   sessionId: item.sessionId,
                   title: item.title,
                   duration: item.duration,
-                  current: item.current,
                   expiresAt: Date.now() + popupMs,
                 },
               ].slice(-MAX_CARDS),
@@ -322,9 +261,9 @@ window.__ModuleLoader__.load({
             (item) => {
               const config = settings.current
               const inFront =
-                typeof document === 'undefined'
-                  ? false
-                  : document.visibilityState === 'visible' && document.hasFocus()
+                typeof document !== 'undefined'
+                && document.visibilityState === 'visible'
+                && document.hasFocus()
               const channel =
                 config.mode === 'popup'
                   ? 'popup'
@@ -333,7 +272,6 @@ window.__ModuleLoader__.load({
                     : inFront
                       ? 'popup'
                       : 'notification'
-              report('raise', { channel, mode: config.mode, inFront, sessionId: item.sessionId })
               if (channel === 'popup') {
                 showCard(item)
                 return
@@ -348,20 +286,13 @@ window.__ModuleLoader__.load({
             [showCard],
           )
 
-          // One line per mount says whether the framework handed over its seats at
-          // all; a crashed entry never gets this far.
+          // The card row sits under the application title bar, never under it.
           useEffect(() => {
-            const inset = titleBarInset()
-            setTop(inset)
-            report('mount', {
-              props: Object.keys(props).sort(),
-              hasUseSessions: typeof props.useSessions === 'function',
-              top: inset,
-            })
+            setTop(titleBarInset())
           }, [])
 
           // Settings refresh: on mount, when the page returns to the front, and
-          // every few seconds, so a configuration edit reaches a mounted page.
+          // once in a while, so an edited configuration reaches a mounted page.
           useEffect(() => {
             let alive = true
             const load = () => {
@@ -369,27 +300,7 @@ window.__ModuleLoader__.load({
               fetch(ENDPOINT, { cache: 'no-store' })
                 .then((response) => (response.ok ? response.json() : null))
                 .then((value) => {
-                  if (!alive || value === null) return
-                  settings.current = normalizeSettings(value)
-                  const sequence = typeof value.testSeq === 'number' ? value.testSeq : 0
-                  if (sequence === testSeq.current) return
-                  testSeq.current = sequence
-                  if (sequence > 0) {
-                    const sessions = latestList.current
-                    const current = sessions === undefined ? undefined : sessions.current
-                    const sessionId =
-                      current !== undefined && typeof current === 'object' && current.sessionId !== undefined
-                        ? current.sessionId
-                        : sessions === undefined
-                          ? ''
-                          : (sessions.ids?.[0] ?? '')
-                    raise({
-                      sessionId,
-                      title: t('test.title'),
-                      duration: 65000,
-                      current: false,
-                    })
-                  }
+                  if (alive && value !== null) settings.current = normalizeSettings(value)
                 })
                 .catch(() => {
                   /* The route is absent while the Host half is off; defaults stay. */
@@ -403,7 +314,7 @@ window.__ModuleLoader__.load({
               clearInterval(timer)
               document.removeEventListener('visibilitychange', load)
             }
-          }, [raise, t])
+          }, [])
 
           // Card expiry. Only cards the user can already see run this timer.
           useEffect(() => {
@@ -422,40 +333,24 @@ window.__ModuleLoader__.load({
             const config = settings.current
             const now = Date.now()
             const started = runningSince.current
-            const currentId = list.current === undefined ? undefined : list.current.sessionId ?? list.current
             for (const sessionId of list.ids) {
               const row = list.byId[sessionId]
               if (row === undefined || row.blank === true) continue
               if (config.ignoreSubagents && row.origin === 'subagent') continue
-              const running = row.running === true
               const previous = started.get(sessionId)
-              if (running) {
-                if (previous === undefined) {
-                  started.set(sessionId, { since: now, title: row.displayTitle })
-                  report('running', { sessionId, title: row.displayTitle })
-                } else if (row.displayTitle !== undefined) {
-                  previous.title = row.displayTitle
-                }
+              if (row.running === true) {
+                if (previous === undefined) started.set(sessionId, { since: now, title: row.displayTitle })
+                else if (row.displayTitle !== undefined) previous.title = row.displayTitle
                 continue
               }
               if (previous === undefined) continue
               started.delete(sessionId)
-              const current = sessionId === currentId
               const duration = now - previous.since
-              report('finished', {
-                sessionId,
-                duration,
-                minimum: config.minDurationSeconds,
-                current,
-                notable: duration >= config.minDurationSeconds * 1000,
-              })
-              if (current && !config.includeCurrentSession) continue
               if (duration < config.minDurationSeconds * 1000) continue
               raise({
                 sessionId,
                 title: previous.title || row.displayTitle || sessionId,
                 duration,
-                current,
               })
             }
           }, [list, raise])
@@ -474,7 +369,6 @@ window.__ModuleLoader__.load({
                   tabIndex: 0,
                   title: t('action.open'),
                   onClick: () => {
-                    report('card-click', { sessionId: card.sessionId, current: card.current })
                     openSession(card.sessionId)
                     dismiss(card.key)
                   },
@@ -490,13 +384,7 @@ window.__ModuleLoader__.load({
                   'div',
                   { className: 'dsh-poke-body' },
                   h('div', { className: 'dsh-poke-title' }, card.title),
-                  h(
-                    'div',
-                    { className: 'dsh-poke-meta' },
-                    card.current
-                      ? `${t('notice.current')} · ${formatDuration(t, card.duration)}`
-                      : `${t('notice.finished')} · ${formatDuration(t, card.duration)}`,
-                  ),
+                  h('div', { className: 'dsh-poke-meta' }, `${t('notice.finished')} · ${formatDuration(t, card.duration)}`),
                 ),
                 h(
                   'button',
@@ -516,42 +404,16 @@ window.__ModuleLoader__.load({
           )
         }
 
-        /** Keep a crashing entry from blanking silently; report it instead. */
-        class Boundary extends React.Component {
-          constructor(props) {
-            super(props)
-            this.state = { failed: false }
-          }
-
-          static getDerivedStateFromError() {
-            return { failed: true }
-          }
-
-          componentDidCatch(error, info) {
-            report('crash', {
-              message: String((error && error.message) || error),
-              stack: String((error && error.stack) || '').slice(0, 800),
-              componentStack: String((info && info.componentStack) || '').slice(0, 800),
-            })
-          }
-
-          render() {
-            return this.state.failed ? null : this.props.children
-          }
-        }
-
-        const Entry = (props) => h(Boundary, null, h(Overlay, props))
-
         disposers.push(
           ctx.slots.inject('shell.overlay', () =>
-            ctx.slots.register({ name: 'shell.overlay', id: 'dsh-poke', order: 60 }, Entry),
+            ctx.slots.register({ name: 'shell.overlay', id: 'dsh-poke', order: 60 }, Overlay),
           ),
         )
         return () => {
           for (const dispose of disposers) {
             try {
               dispose()
-            } catch (_error) {
+            } catch {
               /* Registration teardown is best-effort during unload. */
             }
           }
