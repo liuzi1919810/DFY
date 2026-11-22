@@ -63,7 +63,7 @@ dsh plugin --profile desktop add file:<tgz 绝对路径>
 | `ignoreSubagents` | `true` | 忽略子智能体会话 |
 | `windowsAppId` | `electron.app.DeepSeek Harness` | toast 使用的 Windows 应用标识，必须和任务栏快捷方式一致，否则系统静默丢弃 |
 
-改完配置后页面最多 15 秒内跟上新设置。
+改完点「保存」，状态栏会显示「已保存」；写入失败会显示宿主拒绝的原因。字段都是 volatile，改完不用重启插件，页面最多 15 秒内跟上新设置。
 
 ## 已知限制
 
@@ -71,6 +71,7 @@ dsh plugin --profile desktop add file:<tgz 绝对路径>
 - 计时从「页面看到运行中」开始。页面刚刷新或刚启动时，已经在跑的任务会少算前面那段时间
 - Windows 通知点击不会跳会话——WinRT 的激活回调需要注册 COM 处理器，这版没做
 - 子智能体会话默认忽略；父会话结束才戳
+- 提问提醒只在页面打开时看得到；DSH 没有把提问推到宿主侧，所以页面没开就不会有提醒
 
 ## 许可
 

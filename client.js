@@ -602,7 +602,6 @@ window.__ModuleLoader__.load({
                   ? values.windowsAppId
                   : DEFAULTS.windowsAppId,
             })
-            setPhase('idle')
           }, [revision, values])
 
           if (props.view === 'summary') return t('config.summary')
@@ -653,17 +652,18 @@ window.__ModuleLoader__.load({
               h('div', null, control),
             )
 
-          const numberInput = (name) =>
+          const numberInput = (name, min) =>
             h('input', {
               className: 'dsh-poke-input',
               type: 'number',
-              min: 0,
+              min,
               step: 1,
               value: String(draft[name]),
               disabled: !editable,
               onChange: (event) => {
                 const parsed = Number(event.target.value)
-                setDraft((current) => ({ ...current, [name]: Number.isFinite(parsed) ? parsed : 0 }))
+                const next = Number.isFinite(parsed) ? Math.max(min, Math.trunc(parsed)) : min
+                setDraft((current) => ({ ...current, [name]: next }))
                 setPhase('idle')
               },
             })
@@ -691,8 +691,8 @@ window.__ModuleLoader__.load({
                 h('option', { value: 'notification' }, t('config.mode.notification')),
               ),
             ),
-            field(t('config.minDuration'), t('config.minDuration.hint'), numberInput('minDurationSeconds')),
-            field(t('config.popupSeconds'), t('config.popupSeconds.hint'), numberInput('popupSeconds')),
+            field(t('config.minDuration'), t('config.minDuration.hint'), numberInput('minDurationSeconds', 0)),
+            field(t('config.popupSeconds'), t('config.popupSeconds.hint'), numberInput('popupSeconds', 2)),
             field(
               t('config.ignoreSubagents'),
               t('config.ignoreSubagents.hint'),

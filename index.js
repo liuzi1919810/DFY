@@ -51,49 +51,68 @@ const DEFAULTS = Object.freeze({
 
 const MODES = ['auto', 'popup', 'notification']
 
-/** Settings surface rendered on the plugin's own row in Plugins. */
+/**
+ * Settings surface shown on the plugin's own row in Plugins.
+ *
+ * Every field is volatile: DeepSeek Harness exposes a schema-driven
+ * configuration page only for entries that declare volatile fields, and a
+ * volatile change reaches the running plugin without remounting it. The Host
+ * reads the current value per request instead of caching it.
+ */
 export const Config = z.object({
   mode: z
     .union(MODES)
     .default(DEFAULTS.mode)
-    .description('auto: card while the window is in front, Windows notification otherwise. popup: card only. notification: Windows notification only.'),
+    .volatile()
+    .description('auto: a card while the window is in front, a Windows toast otherwise. popup: card only. notification: toast only.'),
   minDurationSeconds: z
     .number()
     .min(0)
     .step(1)
     .default(DEFAULTS.minDurationSeconds)
+    .volatile()
     .description('Only a task that ran at least this many seconds pokes you. 0 pokes for every finished task.'),
   popupSeconds: z
     .number()
     .min(2)
     .step(1)
     .default(DEFAULTS.popupSeconds)
+    .volatile()
     .description('How long the in-app card stays before it fades out.'),
   ignoreSubagents: z
     .boolean()
     .default(DEFAULTS.ignoreSubagents)
+    .volatile()
     .description('Skip subagent Sessions, so a parent task does not poke once per child.'),
   windowsAppId: z
     .string()
     .default(DEFAULTS.windowsAppId)
+    .volatile()
     .description('Windows application identity the toast is raised under. It must match the taskbar shortcut, otherwise Windows drops the toast silently.'),
 })
+
+/** Read one volatile field, tolerating a plain value too. */
+function current(ref, fallback) {
+  const value = ref !== null && typeof ref === 'object' && typeof ref.get === 'function' ? ref.get() : ref
+  return value === undefined ? fallback : value
+}
 
 /** The settings the page receives: every field present and inside its range. */
 function snapshotOf(config) {
   const source = config ?? {}
+  const mode = current(source.mode, DEFAULTS.mode)
+  const minDuration = current(source.minDurationSeconds, DEFAULTS.minDurationSeconds)
+  const popup = current(source.popupSeconds, DEFAULTS.popupSeconds)
+  const ignoreSubagents = current(source.ignoreSubagents, DEFAULTS.ignoreSubagents)
+  const appId = current(source.windowsAppId, DEFAULTS.windowsAppId)
   const number = (value, fallback, min) =>
     typeof value === 'number' && Number.isFinite(value) && value >= min ? value : fallback
   return {
-    mode: MODES.includes(source.mode) ? source.mode : DEFAULTS.mode,
-    minDurationSeconds: number(source.minDurationSeconds, DEFAULTS.minDurationSeconds, 0),
-    popupSeconds: number(source.popupSeconds, DEFAULTS.popupSeconds, 2),
-    ignoreSubagents:
-      typeof source.ignoreSubagents === 'boolean' ? source.ignoreSubagents : DEFAULTS.ignoreSubagents,
-    windowsAppId:
-      typeof source.windowsAppId === 'string' && source.windowsAppId !== ''
-        ? source.windowsAppId
-        : DEFAULTS.windowsAppId,
+    mode: MODES.includes(mode) ? mode : DEFAULTS.mode,
+    minDurationSeconds: number(minDuration, DEFAULTS.minDurationSeconds, 0),
+    popupSeconds: number(popup, DEFAULTS.popupSeconds, 2),
+    ignoreSubagents: typeof ignoreSubagents === 'boolean' ? ignoreSubagents : DEFAULTS.ignoreSubagents,
+    windowsAppId: typeof appId === 'string' && appId !== '' ? appId : DEFAULTS.windowsAppId,
   }
 }
 
@@ -128,15 +147,13 @@ function readBody(req, limit = 8 * 1024) {
  * @returns the disposer owned by the calling fiber.
  */
 export function apply(ctx, config) {
-  const settings = snapshotOf(config)
-
   const respond = (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { allow: 'GET, HEAD' })
       res.end()
       return
     }
-    sendJson(res, settings, req.method)
+    sendJson(res, snapshotOf(config), req.method)
   }
 
   const toast = async (req, res) => {
@@ -152,6 +169,7 @@ export function apply(ctx, config) {
       sendJson(res, { shown: false }, req.method)
       return
     }
+    const settings = snapshotOf(config)
     const payload = Buffer.from(
       JSON.stringify({
         title: typeof notice.title === 'string' && notice.title !== '' ? notice.title : 'Poke',
