@@ -1,11 +1,17 @@
 /**
- * Client half of dsh-poke: a poke-style notice when a Session task finishes.
+ * Client half of dsh-poke: a poke-style notice when a Session task finishes, or
+ * when a Session is waiting for an answer.
  *
  * A task is over when the Session list reports a Session running and then not
- * running again. The notice is an in-app card on the frame-wide overlay layer or
- * a Windows toast, chosen by the settings the Host publishes; the card is
- * click-through outside itself and never raises the window, so the application
- * keeps its normal place behind other windows.
+ * running again. A Session is waiting when its pending interaction is a
+ * question. Both raise the same notice: an in-app card on the frame-wide overlay
+ * layer or a Windows toast, chosen by the settings the Host publishes. The card
+ * is click-through outside itself and never raises the window, so the
+ * application keeps its normal place behind other windows.
+ *
+ * The row's configuration page is drawn here too: DeepSeek Harness never
+ * generates a plugin's form, it only reserves the seat and hands over the
+ * values and the write action.
  */
 
 window.__ModuleLoader__.load({
@@ -27,7 +33,10 @@ window.__ModuleLoader__.load({
       minDurationSeconds: 5,
       popupSeconds: 8,
       ignoreSubagents: true,
+      windowsAppId: 'electron.app.DeepSeek Harness',
     })
+    /** Fields the configuration page edits, in display order. */
+    const FIELDS = ['mode', 'minDurationSeconds', 'popupSeconds', 'ignoreSubagents', 'windowsAppId']
     /** Most cards kept on screen at once; older ones fall off the top. */
     const MAX_CARDS = 3
     /** How often a mounted page re-reads the settings. */
@@ -37,20 +46,62 @@ window.__ModuleLoader__.load({
       en: {
         'notify.title': 'Poke',
         'notice.finished': 'Task finished',
+        'notice.question': 'Waiting for your answer',
         'action.open': 'Open this Session',
         'action.dismiss': 'Dismiss',
         'unit.hour': 'h',
         'unit.minute': 'min',
         'unit.second': 'sec',
+        'config.summary': 'Notice channel, duration threshold, card lifetime, subagents, Windows identity',
+        'config.loading': 'Loading…',
+        'config.unavailable': 'Configuration is unavailable in this browser session',
+        'config.readonly': 'This profile does not accept writes',
+        'config.mode': 'Notice channel',
+        'config.mode.auto': 'auto: card in front, Windows notification behind',
+        'config.mode.popup': 'popup: card only',
+        'config.mode.notification': 'notification: Windows notification only',
+        'config.minDuration': 'Minimum duration (seconds)',
+        'config.minDuration.hint': 'Only a task that ran at least this long pokes you. 0 pokes for every finished task.',
+        'config.popupSeconds': 'Card lifetime (seconds)',
+        'config.popupSeconds.hint': 'How long the card stays before it fades out.',
+        'config.ignoreSubagents': 'Ignore subagent Sessions',
+        'config.ignoreSubagents.hint': 'A parent task then pokes once instead of once per child.',
+        'config.windowsAppId': 'Windows application identity',
+        'config.windowsAppId.hint': 'Must match the taskbar shortcut, otherwise Windows drops the toast silently.',
+        'config.save': 'Save',
+        'config.saved': 'Saved',
+        'config.failed': 'The Host refused the change',
+        'config.saving': 'Saving…',
       },
       zh: {
         'notify.title': '戳一戳',
         'notice.finished': '跑完了',
+        'notice.question': '等你回答',
         'action.open': '打开这个会话',
         'action.dismiss': '关闭',
         'unit.hour': '小时',
         'unit.minute': '分',
         'unit.second': '秒',
+        'config.summary': '提醒方式、时长门槛、卡片停留、子智能体、Windows 标识',
+        'config.loading': '加载中…',
+        'config.unavailable': '当前浏览器会话里配置不可用',
+        'config.readonly': '这个 profile 不接受写入',
+        'config.mode': '提醒方式',
+        'config.mode.auto': 'auto：前台弹卡片，后台发通知',
+        'config.mode.popup': 'popup：只弹卡片',
+        'config.mode.notification': 'notification：只发通知',
+        'config.minDuration': '时长门槛（秒）',
+        'config.minDuration.hint': '跑够这么久才提醒，0 表示每个任务都提醒',
+        'config.popupSeconds': '卡片停留（秒）',
+        'config.popupSeconds.hint': '卡片多久自动消失',
+        'config.ignoreSubagents': '忽略子智能体',
+        'config.ignoreSubagents.hint': '父会话结束时只戳一次，不按子任务重复',
+        'config.windowsAppId': 'Windows 应用标识',
+        'config.windowsAppId.hint': '必须和任务栏快捷方式一致，否则系统静默丢弃通知',
+        'config.save': '保存',
+        'config.saved': '已保存',
+        'config.failed': '宿主拒绝了这次修改',
+        'config.saving': '保存中…',
       },
     }
 
@@ -100,6 +151,9 @@ window.__ModuleLoader__.load({
   border-radius: 50%;
   background: var(--dsw-alias-brand-primary);
 }
+.dsh-poke-dot[data-question='true'] {
+  background: var(--dsw-alias-state-warn-primary);
+}
 .dsh-poke-body {
   flex: 1;
   min-width: 0;
@@ -137,6 +191,78 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
 }
+.dsh-poke-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 680px;
+}
+.dsh-poke-field {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.dsh-poke-label {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-poke-hint {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-poke-input,
+.dsh-poke-select {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 320px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+}
+.dsh-poke-select {
+  cursor: pointer;
+}
+.dsh-poke-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-poke-check input {
+  accent-color: var(--dsw-alias-brand-primary);
+}
+.dsh-poke-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dsh-poke-save {
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-brand-primary);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dsh-poke-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dsh-poke-status {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
 `
 
     /** Accept only the fields the Client understands, each inside its range. */
@@ -150,6 +276,10 @@ window.__ModuleLoader__.load({
         popupSeconds: number(value.popupSeconds, DEFAULTS.popupSeconds, 2),
         ignoreSubagents:
           typeof value.ignoreSubagents === 'boolean' ? value.ignoreSubagents : DEFAULTS.ignoreSubagents,
+        windowsAppId:
+          typeof value.windowsAppId === 'string' && value.windowsAppId !== ''
+            ? value.windowsAppId
+            : DEFAULTS.windowsAppId,
       }
     }
 
@@ -226,12 +356,17 @@ window.__ModuleLoader__.load({
             .catch(() => false)
         }
 
+        /** One card or toast per finished task and per waiting question. */
         const Overlay = (props) => {
           const useSessions = props.useSessions
           const list = useSessions !== undefined ? useSessions((state) => state) : undefined
+          const useSessionStatus = props.useSessionStatus
+          const statuses = useSessionStatus !== undefined ? useSessionStatus((state) => state) : undefined
           const [cards, setCards] = useState([])
           const [top, setTop] = useState(44)
           const runningSince = useRef(new Map())
+          /** Session id → the pending question key already noticed. */
+          const questionsSeen = useRef(null)
           const settings = useRef(DEFAULTS)
 
           /** Drop one card by its key. */
@@ -249,14 +384,15 @@ window.__ModuleLoader__.load({
                   key: `${item.sessionId}:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
                   sessionId: item.sessionId,
                   title: item.title,
-                  duration: item.duration,
+                  detail: item.detail,
+                  question: item.question === true,
                   expiresAt: Date.now() + popupMs,
                 },
               ].slice(-MAX_CARDS),
             )
           }, [])
 
-          /** Notice one finished task, through the channel the settings choose. */
+          /** Notice one finished task or waiting question, through the chosen channel. */
           const raise = useCallback(
             (item) => {
               const config = settings.current
@@ -276,10 +412,7 @@ window.__ModuleLoader__.load({
                 showCard(item)
                 return
               }
-              void requestToast(
-                t('notify.title'),
-                `${item.title}\n${t('notice.finished')} · ${formatDuration(t, item.duration)}`,
-              ).then((shown) => {
+              void requestToast(t('notify.title'), `${item.title}\n${item.detail}`).then((shown) => {
                 if (!shown) showCard(item)
               })
             },
@@ -350,10 +483,39 @@ window.__ModuleLoader__.load({
               raise({
                 sessionId,
                 title: previous.title || row.displayTitle || sessionId,
-                duration,
+                detail: `${t('notice.finished')} · ${formatDuration(t, duration)}`,
               })
             }
-          }, [list, raise])
+          }, [list, raise, t])
+
+          // Pending-question watch: a Session that starts waiting for an answer
+          // pokes once per question. The first snapshot only records what is
+          // already pending, so opening the page mid-question stays quiet.
+          useEffect(() => {
+            if (statuses === undefined) return
+            const previous = questionsSeen.current
+            const next = new Map()
+            for (const [sessionId, status] of statuses) {
+              const interaction = status.pendingInteraction
+              const key = interaction !== undefined && interaction.kind === 'question' ? interaction.key : undefined
+              next.set(sessionId, key)
+            }
+            questionsSeen.current = next
+            if (previous === null) return
+            const config = settings.current
+            for (const [sessionId, key] of next) {
+              if (key === undefined || previous.get(sessionId) === key) continue
+              const row = list === undefined || list.byId === undefined ? undefined : list.byId[sessionId]
+              if (row === undefined || row.blank === true) continue
+              if (config.ignoreSubagents && row.origin === 'subagent') continue
+              raise({
+                sessionId,
+                title: row.displayTitle || sessionId,
+                detail: t('notice.question'),
+                question: true,
+              })
+            }
+          }, [statuses, list, raise, t])
 
           return h(
             'div',
@@ -379,12 +541,16 @@ window.__ModuleLoader__.load({
                     dismiss(card.key)
                   },
                 },
-                h('span', { className: 'dsh-poke-dot', 'aria-hidden': true }),
+                h('span', {
+                  className: 'dsh-poke-dot',
+                  'data-question': card.question ? 'true' : undefined,
+                  'aria-hidden': true,
+                }),
                 h(
                   'div',
                   { className: 'dsh-poke-body' },
                   h('div', { className: 'dsh-poke-title' }, card.title),
-                  h('div', { className: 'dsh-poke-meta' }, `${t('notice.finished')} · ${formatDuration(t, card.duration)}`),
+                  h('div', { className: 'dsh-poke-meta' }, card.detail),
                 ),
                 h(
                   'button',
@@ -404,9 +570,194 @@ window.__ModuleLoader__.load({
           )
         }
 
+        /**
+         * The row's configuration page.
+         * @param props - the page's view request and the Host-owned form.
+         */
+        const SettingsForm = (props) => {
+          const form = props.form
+          const snapshot = form === undefined ? undefined : form.state
+          const values = snapshot === undefined ? undefined : snapshot.value
+          const revision = snapshot === undefined ? undefined : snapshot.revision
+          const [draft, setDraft] = useState(null)
+          const [phase, setPhase] = useState('idle')
+          /** Revision already copied into the draft; guards against re-seeding. */
+          const seeded = useRef(-1)
+
+          // Seed the draft from the Host values, and again after any accepted
+          // write: the page republishes the snapshot with a new revision.
+          useEffect(() => {
+            if (values === undefined || values === null) return
+            if (seeded.current === revision) return
+            seeded.current = revision
+            setDraft({
+              mode: values.mode === 'popup' || values.mode === 'notification' ? values.mode : DEFAULTS.mode,
+              minDurationSeconds:
+                typeof values.minDurationSeconds === 'number' ? values.minDurationSeconds : DEFAULTS.minDurationSeconds,
+              popupSeconds: typeof values.popupSeconds === 'number' ? values.popupSeconds : DEFAULTS.popupSeconds,
+              ignoreSubagents:
+                typeof values.ignoreSubagents === 'boolean' ? values.ignoreSubagents : DEFAULTS.ignoreSubagents,
+              windowsAppId:
+                typeof values.windowsAppId === 'string' && values.windowsAppId !== ''
+                  ? values.windowsAppId
+                  : DEFAULTS.windowsAppId,
+            })
+            setPhase('idle')
+          }, [revision, values])
+
+          if (props.view === 'summary') return t('config.summary')
+          if (form === undefined || snapshot === undefined || draft === null) {
+            return h('div', { className: 'dsh-poke-status' }, t('config.loading'))
+          }
+          if (snapshot.status === 'unavailable') {
+            return h('div', { className: 'dsh-poke-status' }, t('config.unavailable'))
+          }
+
+          /** Write the fields that differ from the Host values. */
+          const save = () => {
+            const ops = []
+            for (const field of FIELDS) {
+              const next = draft[field]
+              if (next === values[field]) continue
+              if (field === 'windowsAppId' && next === DEFAULTS.windowsAppId) {
+                ops.push({ op: 'unset', path: [field] })
+              } else if (typeof next === 'string' && next === '') {
+                ops.push({ op: 'unset', path: [field] })
+              } else {
+                ops.push({ op: 'set', path: [field], value: next })
+              }
+            }
+            if (ops.length === 0) {
+              setPhase('saved')
+              return
+            }
+            setPhase('saving')
+            form.mutate(ops, revision).then(
+              (accepted) => setPhase(accepted ? 'saved' : 'failed'),
+              () => setPhase('failed'),
+            )
+          }
+
+          const editable = snapshot.writable === true && phase !== 'saving'
+
+          const field = (label, hint, control) =>
+            h(
+              'div',
+              { className: 'dsh-poke-field' },
+              h(
+                'div',
+                null,
+                h('div', { className: 'dsh-poke-label' }, label),
+                hint === undefined ? null : h('div', { className: 'dsh-poke-hint' }, hint),
+              ),
+              h('div', null, control),
+            )
+
+          const numberInput = (name) =>
+            h('input', {
+              className: 'dsh-poke-input',
+              type: 'number',
+              min: 0,
+              step: 1,
+              value: String(draft[name]),
+              disabled: !editable,
+              onChange: (event) => {
+                const parsed = Number(event.target.value)
+                setDraft((current) => ({ ...current, [name]: Number.isFinite(parsed) ? parsed : 0 }))
+                setPhase('idle')
+              },
+            })
+
+          return h(
+            'div',
+            { className: 'dsh-poke-form' },
+            h('style', { key: 'dsh-poke-form-style' }, CSS),
+            field(
+              t('config.mode'),
+              undefined,
+              h(
+                'select',
+                {
+                  className: 'dsh-poke-select',
+                  value: draft.mode,
+                  disabled: !editable,
+                  onChange: (event) => {
+                    setDraft((current) => ({ ...current, mode: event.target.value }))
+                    setPhase('idle')
+                  },
+                },
+                h('option', { value: 'auto' }, t('config.mode.auto')),
+                h('option', { value: 'popup' }, t('config.mode.popup')),
+                h('option', { value: 'notification' }, t('config.mode.notification')),
+              ),
+            ),
+            field(t('config.minDuration'), t('config.minDuration.hint'), numberInput('minDurationSeconds')),
+            field(t('config.popupSeconds'), t('config.popupSeconds.hint'), numberInput('popupSeconds')),
+            field(
+              t('config.ignoreSubagents'),
+              t('config.ignoreSubagents.hint'),
+              h(
+                'label',
+                { className: 'dsh-poke-check' },
+                h('input', {
+                  type: 'checkbox',
+                  checked: draft.ignoreSubagents === true,
+                  disabled: !editable,
+                  onChange: (event) => {
+                    setDraft((current) => ({ ...current, ignoreSubagents: event.target.checked }))
+                    setPhase('idle')
+                  },
+                }),
+              ),
+            ),
+            field(
+              t('config.windowsAppId'),
+              t('config.windowsAppId.hint'),
+              h('input', {
+                className: 'dsh-poke-input',
+                type: 'text',
+                value: draft.windowsAppId,
+                disabled: !editable,
+                onChange: (event) => {
+                  setDraft((current) => ({ ...current, windowsAppId: event.target.value }))
+                  setPhase('idle')
+                },
+              }),
+            ),
+            h(
+              'div',
+              { className: 'dsh-poke-actions' },
+              h(
+                'button',
+                { type: 'button', className: 'dsh-poke-save', disabled: !editable, onClick: save },
+                t('config.save'),
+              ),
+              h(
+                'span',
+                { className: 'dsh-poke-status', role: 'status' },
+                snapshot.writable !== true
+                  ? t('config.readonly')
+                  : phase === 'saving'
+                    ? t('config.saving')
+                    : phase === 'saved'
+                      ? t('config.saved')
+                      : phase === 'failed'
+                        ? t('config.failed')
+                        : '',
+              ),
+            ),
+          )
+        }
+
         disposers.push(
           ctx.slots.inject('shell.overlay', () =>
             ctx.slots.register({ name: 'shell.overlay', id: 'dsh-poke', order: 60 }, Overlay),
+          ),
+          ctx.slots.inject('plugins.row.config', () =>
+            ctx.slots.register(
+              { name: 'plugins.row.config', key: '@local/dsh-poke#dsh-poke', locale: NAMESPACE },
+              SettingsForm,
+            ),
           ),
         )
         return () => {

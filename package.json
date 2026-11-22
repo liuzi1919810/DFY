@@ -1,6 +1,6 @@
 ﻿{
     "name":  "@local/dsh-poke",
-    "version":  "0.2.0",
+    "version":  "0.3.0",
     "private":  true,
     "type":  "module",
     "description":  "Poke-style notice when a Session task finishes: in-app card or Windows notification.",
