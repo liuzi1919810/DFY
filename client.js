@@ -265,6 +265,34 @@ window.__ModuleLoader__.load({
 }
 `
 
+    /** Where the running-since marks survive a page reload. */
+    const START_KEY = 'dsh-poke:running-since'
+    /** A saved mark older than this cannot belong to a live turn. */
+    const START_TTL_MS = 24 * 60 * 60 * 1000
+
+    /** Read the running-since marks; an unreadable store reads as empty. */
+    function readStarts() {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(START_KEY) ?? '{}')
+        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+      } catch {
+        return {}
+      }
+    }
+
+    /** Persist the running-since marks, dropping anything past the TTL. */
+    function writeStarts(marks, now) {
+      try {
+        const kept = {}
+        for (const [sessionId, since] of Object.entries(marks)) {
+          if (typeof since === 'number' && Number.isFinite(since) && now - since < START_TTL_MS) kept[sessionId] = since
+        }
+        window.localStorage.setItem(START_KEY, JSON.stringify(kept))
+      } catch {
+        /* Blocked storage costs accuracy across reloads, never the notice itself. */
+      }
+    }
+
     /** Accept only the fields the Client understands, each inside its range. */
     function normalizeSettings(value) {
       if (value === null || typeof value !== 'object') return DEFAULTS
@@ -466,18 +494,34 @@ window.__ModuleLoader__.load({
             const config = settings.current
             const now = Date.now()
             const started = runningSince.current
+            const stored = readStarts()
+            let storedChanged = false
             for (const sessionId of list.ids) {
               const row = list.byId[sessionId]
               if (row === undefined || row.blank === true) continue
               if (config.ignoreSubagents && row.origin === 'subagent') continue
               const previous = started.get(sessionId)
               if (row.running === true) {
-                if (previous === undefined) started.set(sessionId, { since: now, title: row.displayTitle })
-                else if (row.displayTitle !== undefined) previous.title = row.displayTitle
+                if (previous === undefined) {
+                  // A reload or a remounted plugin loses the in-memory mark; the
+                  // checkpoint keeps the real start so the duration stays honest.
+                  const checkpoint = stored[sessionId]
+                  const usable = typeof checkpoint === 'number' && Number.isFinite(checkpoint)
+                    && checkpoint <= now && now - checkpoint < START_TTL_MS
+                  started.set(sessionId, { since: usable ? checkpoint : now, title: row.displayTitle })
+                  stored[sessionId] = usable ? checkpoint : now
+                  storedChanged = true
+                } else if (row.displayTitle !== undefined) {
+                  previous.title = row.displayTitle
+                }
                 continue
               }
               if (previous === undefined) continue
               started.delete(sessionId)
+              if (stored[sessionId] !== undefined) {
+                delete stored[sessionId]
+                storedChanged = true
+              }
               const duration = now - previous.since
               if (duration < config.minDurationSeconds * 1000) continue
               raise({
@@ -486,6 +530,7 @@ window.__ModuleLoader__.load({
                 detail: `${t('notice.finished')} · ${formatDuration(t, duration)}`,
               })
             }
+            if (storedChanged) writeStarts(stored, now)
           }, [list, raise, t])
 
           // Pending-question watch: a Session that starts waiting for an answer
